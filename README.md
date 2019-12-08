@@ -1,2 +1,4 @@
-# crypto_stream
-Crypto ticker streaming from Coinbase
+# Crypto Stream
+
+(WIP)
+BTC price streaming from Coinbase (websocket) -> Pub/Sub -> Dataflow -> BigQuery
