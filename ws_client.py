@@ -6,7 +6,7 @@ import ssl
 #subscription parameters
 #TODO: update params
 params = {"type": "subscribe", "product_ids": ["BTC-USD"],
-"channels": ["heartbeat", {"name": "ticker", "product_ids": ["BTC-USD"]}]}
+"channels": [{"name": "ticker", "product_ids": ["BTC-USD"]}]}
 
 try:
     import thread
