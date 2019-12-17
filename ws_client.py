@@ -2,9 +2,12 @@ import websocket
 import json
 import socket
 import ssl
+from google.cloud import pubsub
+
+TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+TOPIC = 'cryptostream'
 
 #subscription parameters
-#TODO: update params
 params = {"type": "subscribe", "product_ids": ["BTC-USD"],
 "channels": [{"name": "ticker", "product_ids": ["BTC-USD"]}]}
 
@@ -24,7 +27,6 @@ def on_close(ws):
     print("### closed ###")
 
 def on_open(ws):
-
     #send subscription params to server
     ws.send(json.dumps(params))
 
@@ -41,13 +43,12 @@ def on_open(ws):
 
 
 if __name__ == "__main__":
-  websocket.enableTrace(True)
-  ws = websocket.WebSocketApp("wss://ws-feed.pro.coinbase.com",
-   on_message = on_message,
-   on_error = on_error,
-   on_close = on_close)
+    websocket.enableTrace(True)
+    ws = websocket.WebSocketApp("wss://ws-feed.pro.coinbase.com",
+    on_message = on_message,
+    on_error = on_error,
+    on_close = on_close)
 
-  ws.on_open = on_open
+    ws.on_open = on_open
 
-  ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
-  #ws.run_forever()
+    ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}) #no ssl cert
