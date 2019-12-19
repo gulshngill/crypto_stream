@@ -2,13 +2,14 @@ import websocket
 import json
 import socket
 import ssl
+import argparse
+import logging
+import sys
 from google.cloud import pubsub
 
 TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 TOPIC = 'cryptostream'
-
-#subscription parameters
-params = {"type": "subscribe", "product_ids": ["BTC-USD"],
+PARAMS = {"type": "subscribe", "product_ids": ["BTC-USD"],
 "channels": [{"name": "ticker", "product_ids": ["BTC-USD"]}]}
 
 try:
@@ -17,8 +18,12 @@ except ImportError:
     import _thread as thread
 import time
 
+
 def on_message(ws, message):
-    print(message)
+    logging.info('Publishing {}'.format(message))
+
+    #for message_data in message:
+    publisher.publish(event_type, message.encode("utf-8"))
 
 def on_error(ws, error):
     print(error)
@@ -28,21 +33,41 @@ def on_close(ws):
 
 def on_open(ws):
     #send subscription params to server
-    ws.send(json.dumps(params))
+    ws.send(json.dumps(PARAMS))
 
     def run(*args):
+        print("run")
+        #result = json.loads(ws.recv())
 
-        #TODO: forward data to pub/sub
-
-        #response from server
-        result = json.loads(ws.recv())
-        print(result)
 
     thread.start_new_thread(run, ())
 
 
-
 if __name__ == "__main__":
+    #parse arguments from cmd line
+    parser = argparse.ArgumentParser(description='Send sensor data to Cloud Pub/Sub in small groups, simulating real-time behavior')
+    parser.add_argument('--project', help='Example: --project $DEVSHELL_PROJECT_ID', required=True)
+    parser.add_argument('--topic', help='Example: --topic crypto', required=True)
+    args = parser.parse_args()
+
+
+    # create Pub/Sub notification topic
+    logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
+    publisher = pubsub.PublisherClient()
+    event_type = publisher.topic_path(args.project,args.topic)
+    print(event_type)
+
+    #check if topic exists in pubsub, else create new one (service account my require additional role to create topics)
+    try:
+        publisher.get_topic(event_type)
+        logging.info('Using pub/sub topic {}'.format(args.topic))
+    except:
+        publisher.create_topic(event_type)
+        logging.info('Creating pub/sub topic {}'.format(topic))
+        sys.close()
+
+
+    #enable websocket feed
     websocket.enableTrace(True)
     ws = websocket.WebSocketApp("wss://ws-feed.pro.coinbase.com",
     on_message = on_message,

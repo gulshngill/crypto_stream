@@ -1,4 +1,4 @@
-#!/Users/gulshngill/Courses/projects/crypto/websocket_client/crypto_stream/venv/bin/python3.8
+#!/Users/gulshngill/Courses/projects/crypto/websocket_client/crypto_stream/venv/bin/python3.7
 
 import argparse
 import code
