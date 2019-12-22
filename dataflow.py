@@ -6,8 +6,6 @@ python dataflow.py \
   --runner=DataflowRunner \
   --window_size=2 \
   --temp_location=gs://$BUCKET_NAME/temp
-
-
 '''
 import argparse
 import datetime
@@ -36,11 +34,6 @@ class GroupWindowsIntoBatches(beam.PTransform):
                 | 'Window into Fixed Intervals' >> beam.WindowInto(
                     window.FixedWindows(self.window_size))
                 | 'Add timestamps to messages' >> (beam.ParDo(AddTimestamps()))
-                # Use a dummy key to group the elements in the same window.
-                # Note that all the elements in one window must fit into memory
-                # for this. If the windowed elements do not fit into memory,
-                # please consider using `beam.util.BatchElements`.
-                # https://beam.apache.org/releases/pydoc/current/apache_beam.transforms.util.html#apache_beam.transforms.util.BatchElements
                 | 'Add Dummy Key' >> beam.Map(lambda elem: (None, elem))
                 | 'Groupby' >> beam.GroupByKey()
                 | 'Abandon Dummy Key' >> beam.MapTuple(lambda _, val: val))
@@ -49,11 +42,6 @@ class GroupWindowsIntoBatches(beam.PTransform):
 class AddTimestamps(beam.DoFn):
 
     def process(self, element, publish_time=beam.DoFn.TimestampParam):
-        """Processes each incoming windowed element by extracting the Pub/Sub
-        message and its publish timestamp into a dictionary. `publish_time`
-        defaults to the publish timestamp returned by the Pub/Sub server. It
-        is bound to each element by Beam at runtime.
-        """
 
         yield {
             'message_body': element.decode('utf-8'),
@@ -81,8 +69,6 @@ class WriteBatchesToGCS(beam.DoFn):
 
 
 def run(input_topic, output_path, window_size=1.0, pipeline_args=None):
-    # `save_main_session` is set to true because some DoFn's rely on
-    # globally imported modules.
     pipeline_options = PipelineOptions(
         pipeline_args, streaming=True, save_main_session=True)
 
@@ -93,7 +79,7 @@ def run(input_topic, output_path, window_size=1.0, pipeline_args=None):
          | 'Write to GCS' >> beam.ParDo(WriteBatchesToGCS(output_path)))
 
 
-if __name__ == '__main__': 
+if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
 
     parser = argparse.ArgumentParser()
