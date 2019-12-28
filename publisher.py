@@ -62,7 +62,7 @@ if __name__ == "__main__":
     except:
         publisher.create_topic(event_type)
         logging.info('Creating pub/sub topic {}'.format(topic))
-        sys.close()
+
 
 
     #enable websocket feed
