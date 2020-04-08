@@ -1,2 +1,4 @@
 .DS_STORE
 service_key.json
+venv
+__pycache__
