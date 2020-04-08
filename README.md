@@ -3,10 +3,7 @@
 
 Streaming pipeline using Google Cloud services Pub/Sub and Dataflow.
 
-BTCUSD and ETHUSD ticker data is streamed from <a href=https://docs.pro.coinbase.com/#the-ticker-channel>Coinbase Websocket</a> to Dataflow or analysis and results are then published to a new Pub/Sub topic.
-
-
-BTC price streamed from Coinbase -> Pub/Sub -> Dataflow -> Pub/Sub
+BTCUSD and ETHUSD ticker data is streamed from <a href=https://docs.pro.coinbase.com/#the-ticker-channel>Coinbase Websocket</a> to Dataflow for correlation analysis and results are then published to a new Pub/Sub topic.
 
 1. Install and init the Cloud SDK
 2. Enable billing for the project (if needed)
