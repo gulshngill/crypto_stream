@@ -14,6 +14,7 @@ import dateutil.parser as dp
 import pandas as pd
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.transforms import window
+from apache_beam.utils.timestamp import Duration
 
 PAIR = "BTC-ETH"
 CORRELATION_THRESHOLD = -0.70
@@ -53,7 +54,6 @@ class AddTimeStampFn(beam.DoFn):
         try:
             _, data = elem
             unix_timestamp = dp.parse(data[0]).timestamp()
-
 
             yield beam.window.TimestampedValue(elem, unix_timestamp)
 
@@ -101,16 +101,17 @@ def run(input_topic, output_topic, pipeline_args=None):
     with beam.Pipeline(options=pipeline_options) as p:
         (p
          | 'Read PubSub Messages' >> beam.io.ReadFromPubSub(topic=input_topic)
-         #| 'ReadText' >> beam.io.ReadFromText("data.json", coder=JsonCoder())
+         # | 'ReadText' >> beam.io.ReadFromText("data.json")
          | 'ParseJSON' >> beam.ParDo(ParseData())
          | 'AddEventTs' >> beam.ParDo(AddTimeStampFn())
          | 'Windowing' >> beam.WindowInto(
-                    window.SlidingWindows(size=120, period=60))
+                    window.SlidingWindows(size=120, period=60),
+                    allowed_lateness=Duration(seconds=60))
          | 'GroupByKey' >> beam.GroupByKey()
          | 'CalculateCorrelation' >> beam.ParDo(CalculateCorrelation())
          | 'FilterCorrelation' >> beam.Filter(lambda x: x[1] < CORRELATION_THRESHOLD)
-        # | 'WriteText' >> beam.io.WriteToText("gs://temp-dataflow-gg/output.csv"))
          | 'PublishCorrelation' >> beam.io.WriteToPubSub(output_topic))
+        # | 'WriteText' >> beam.io.WriteToText("gs://bucket/output.csv"))
 
 
 if __name__ == '__main__':
