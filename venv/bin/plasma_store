@@ -1,4 +1,4 @@
-#!/Users/gulshngill/Courses/projects/crypto/websocket_client/crypto_stream/venv/bin/python3.7
+#!/Users/gulshngill/projects/crypto_stream/venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

@@ -1,22 +1,22 @@
 '''
 python dataflow.py \
   --project=$PROJECT_NAME \
-  --input_topic=projects/$PROJECT_NAME/topics/cron-topic \
-  --output_path=gs://$BUCKET_NAME/samples/output \
+  --input_topic=projects/$PROJECT_NAME/topics/topic-name \
+  --output_topic=projects/$PROJECT_NAME/topics/topic-name \
   --runner=DataflowRunner \
-  --window_size=2 \
   --temp_location=gs://$BUCKET_NAME/temp
 '''
 import argparse
 import json
 import logging
-import time
 import apache_beam as beam
-import apache_beam.transforms.window as window
-from apache_beam.metrics import Metrics
+import dateutil.parser as dp
+import pandas as pd
 from apache_beam.options.pipeline_options import PipelineOptions
-from apache_beam.transforms import trigger
+from apache_beam.transforms import window
 
+PAIR = "BTC-ETH"
+CORRELATION_THRESHOLD = -0.70
 
 
 class JsonCoder(object):
@@ -29,90 +29,88 @@ class JsonCoder(object):
         return json.loads(x)
 
 
-
 class ParseData(beam.DoFn):
-    """Parse data to only include required fields and filter out header record"""
-    def __init__(self):
-        beam.DoFn.__init__(self)
-        self.num_parse_errors = Metrics.counter(self.__class__, 'num_parse_errors')
+    """Parse and reshape data to only include required fields and filter out header response"""
 
     def process(self, elem):
         try:
 
-            if 'channels' not in elem.keys():
+            row = json.loads(elem)
 
-                elem["time"] = elem["time"].replace('T', ' ').replace('Z','')
+            if 'channels' not in row.keys():
+                # TODO: Consider reducing precision of timestamp to
+                yield 'BTC-ETH', (row['time'], row['product_id'], row['price'])
 
-                yield {
-                'product_id': elem["product_id"],
-                'trade_id': elem["trade_id"],
-                'sequence': elem["sequence"],
-                'timestamp': elem["time"],
-                'price': elem["price"],
-                'best_bid': elem["best_bid"],
-                'best_ask': elem["best_ask"]
-                }
-
-                logging.info('Parsed: %s', elem)
-
-        except:
-          # Log and count parse errors
-          self.num_parse_errors.inc()
-          logging.error('Parse error on "%s"', elem)
+        except Exception as e:
+            # TODO: Collect erroneous records, output to separate location
+            logging.error(f"ERROR: {repr(e)}\nSTEP: {self.__class__.__name__}\nELEMENT: {elem}")
 
 
-class CalculateSpread(beam.DoFn):
-    """Calculate spread amount and %"""
-
-    def __init__(self):
-        beam.DoFn.__init__(self)
-        self.spread_errors = Metrics.counter(self.__class__, 'spread_errors')
+class AddTimeStampFn(beam.DoFn):
+    """Assign timestamp to element for windowing"""
 
     def process(self, elem):
         try:
-            spread_amt = float(elem["best_ask"]) - float(elem["best_bid"])
-            spread_percentage = spread_amt / float(elem["best_ask"]) * 100
-
-            yield {
-            'product_id': elem["product_id"],
-            'trade_id': elem["trade_id"],
-            'sequence': elem["sequence"],
-            'timestamp': elem["timestamp"],
-            'price': elem["price"],
-            'best_bid': elem["best_bid"],
-            'best_ask': elem["best_ask"],
-            'spread_amt': "{:.2f}".format(spread_amt),
-            'spread_percentage': "{:.2f}".format(spread_percentage)
-            }
-
-            logging.info('Parsed: %s', elem)
-
-        except:
-          # Log and count parse errors
-          self.spread_errors.inc()
-          logging.error('error on "%s" when calculating spread', elem)
+            _, data = elem
+            unix_timestamp = dp.parse(data[0]).timestamp()
 
 
+            yield beam.window.TimestampedValue(elem, unix_timestamp)
+
+        except Exception as e:
+            # TODO: Collect erroneous records, output to separate location
+            logging.error(f"ERROR: {repr(e)}\nELEMENT: {elem}")
 
 
-def run(input_topic, output_path, window_size=1.0, pipeline_args=None):
+class CalculateCorrelation(beam.DoFn):
+    """Calcualte correlation of price"""
+
+    def process(self, elem):
+        _, data = elem
+
+        btc_price_data = [price for price in data if price[1] == 'BTC-USD']
+        eth_price_data = [price for price in data if price[1] == 'ETH-USD']
+
+        if btc_price_data and eth_price_data:
+            index, _, price = zip(*btc_price_data)  # unzip
+
+            print(f"BTC {index}, {price}")
+
+            btc_series = pd.Series([float(p) for p in price],
+                                   index=[pd.Timestamp(i) for i in index])
+
+            index, _, price = zip(*eth_price_data)  # unzip
+
+            print(f"ETC {index}, {price}")
+
+            eth_series = pd.Series([float(p) for p in price],
+                                   index=[pd.Timestamp(i) for i in index])
+
+            print(btc_series.corr(eth_series, method='pearson'))
+
+            yield json.dumps((PAIR, btc_series.corr(eth_series, method='pearson'))).encode('utf-8')
+
+        else:
+            yield PAIR, 0
+
+
+def run(input_topic, output_topic, pipeline_args=None):
     pipeline_options = PipelineOptions(
         pipeline_args, streaming=True, save_main_session=True)
 
     with beam.Pipeline(options=pipeline_options) as p:
         (p
-         #| 'Read PubSub Messages' >> beam.io.ReadFromPubSub(topic=input_topic)
-         | 'ReadText' >> beam.io.ReadFromText("data.json", coder=JsonCoder())
+         | 'Read PubSub Messages' >> beam.io.ReadFromPubSub(topic=input_topic)
+         #| 'ReadText' >> beam.io.ReadFromText("data.json", coder=JsonCoder())
          | 'ParseJSON' >> beam.ParDo(ParseData())
-         | 'CalculateSpread' >> beam.ParDo(CalculateSpread())
-         | 'AddEventTs' >> beam.Map(lambda elem: beam.window.TimestampedValue(elem, time.mktime(
-                    time.strptime(elem['timestamp'], '%Y-%m-%d %H:%M:%S.%f'))))
-         # | 'GlobalWindow' >> beam.WindowInto(
-         #    beam.window.GlobalWindows(),
-         #    trigger=trigger.Repeatedly(trigger.AfterProcessingTime(1 * 60)), #maybe use afterwatermark(early,late) after watermark only triggers when windowcloses
-         #    accumulation_mode=trigger.AccumulationMode.ACCUMULATING)
-         | 'WriteText' >> beam.io.WriteToText("output.csv"))
-         #| 'Write to GCS' >> beam.ParDo(WriteBatchesToGCS(output_path)))
+         | 'AddEventTs' >> beam.ParDo(AddTimeStampFn())
+         | 'Windowing' >> beam.WindowInto(
+                    window.SlidingWindows(size=120, period=60))
+         | 'GroupByKey' >> beam.GroupByKey()
+         | 'CalculateCorrelation' >> beam.ParDo(CalculateCorrelation())
+         | 'FilterCorrelation' >> beam.Filter(lambda x: x[1] < CORRELATION_THRESHOLD)
+        # | 'WriteText' >> beam.io.WriteToText("gs://temp-dataflow-gg/output.csv"))
+         | 'PublishCorrelation' >> beam.io.WriteToPubSub(output_topic))
 
 
 if __name__ == '__main__':
@@ -124,13 +122,9 @@ if __name__ == '__main__':
         help='The Cloud Pub/Sub topic to read from.\n'
              '"projects/<PROJECT_NAME>/topics/<TOPIC_NAME>".')
     parser.add_argument(
-        '--window_size',
-        type=float,
-        default=1.0,
-        help='Output file\'s window size in number of minutes.')
-    parser.add_argument(
-        '--output_path',
-        help='GCS Path of the output file including filename prefix.')
+        '--output_topic',
+        help='Output topic for correlation')
+
     known_args, pipeline_args = parser.parse_known_args()
 
-    run(known_args.input_topic, known_args.output_path, known_args.window_size,pipeline_args)
+    run(known_args.input_topic, known_args.output_topic, pipeline_args)
