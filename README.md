@@ -1,4 +1,4 @@
-# Crypto Streaming Pipeline
+# Crypto Correlation Pipeline
 
 
 Streaming pipeline using Google Cloud services Pub/Sub and Dataflow.
